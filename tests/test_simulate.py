@@ -5,26 +5,26 @@ import hypothesis.strategies as st
 import numpy as np
 import pytest
 
-import lib_eod_simulation as les
+import simbat as sb
 
 
 @pytest.fixture(scope="session")
-def constant_current_discharge() -> les.simulate.DischargePolicyTemplate:
-    return les.simulate.ConstantCurrentDischarge(current_value=-1.0)
+def constant_current_discharge() -> sb.simulate.DischargePolicyTemplate:
+    return sb.simulate.ConstantCurrentDischarge(current_value=-1.0)
 
 
 @pytest.fixture(scope="session")
-def voc_bustos_baeza() -> les.simulate.VOCModelTemplate:
-    return les.simulate.VOC_Bustos_Baeza()
+def voc_bustos_baeza() -> sb.simulate.VOCModelTemplate:
+    return sb.simulate.VOC_Bustos_Baeza()
 
 
 @pytest.fixture(scope="session")
-def ecm_thevenin_zero_order() -> les.simulate.EquivalentCircuitModelTemplate:
-    return les.simulate.ECMTheveninZeroOrder(R=0.1)
+def ecm_thevenin_zero_order() -> sb.simulate.EquivalentCircuitModelTemplate:
+    return sb.simulate.ECMTheveninZeroOrder(R=0.1)
 
 
 @pytest.fixture
-def mock_simulation_results() -> les.SimulationResult:
+def mock_simulation_results() -> sb.SimulationResult:
     time = np.array([0, 1, 2, 3, 4])
     soc = np.random.rand(5, 10)  # 5 time steps, 10 simulations
     voltage = np.random.rand(5, 10) * 4 + 2.5  # random voltages between 2.5V and 6.5V
@@ -34,7 +34,7 @@ def mock_simulation_results() -> les.SimulationResult:
         np.random.rand(10) * 10000
     )  # random EoD times between 0 and 10,000 seconds
 
-    return les.SimulationResult(
+    return sb.SimulationResult(
         times=time,
         soc_histories=soc,
         voltage_histories=voltage,
@@ -44,11 +44,11 @@ def mock_simulation_results() -> les.SimulationResult:
 
 
 @pytest.fixture(scope="session")
-def mock_simulation_config() -> les.SimulationConfig:
-    return les.SimulationConfig(
-        current_policy=les.simulate.ConstantCurrentDischarge(current_value=-1.0),
-        voc_model=les.simulate.VOC_Bustos_Baeza(),
-        ec_model=les.simulate.ECMTheveninZeroOrder(R=0.1),
+def mock_simulation_config() -> sb.SimulationConfig:
+    return sb.SimulationConfig(
+        current_policy=sb.simulate.ConstantCurrentDischarge(current_value=-1.0),
+        voc_model=sb.simulate.VOC_Bustos_Baeza(),
+        ec_model=sb.simulate.ECMTheveninZeroOrder(R=0.1),
         process_noise_distribution=lambda: np.random.normal(0, 0.0005),
         measurement_noise_distribution=lambda: np.random.normal(0, 0.0005),
         dt=100.0,
@@ -139,7 +139,7 @@ def test_expected_columns_of_dataframe(mock_simulation_results):
 def test_battery_particle_update_state_monotonic_when_negative_current(
     current, capacity
 ):
-    particle = les.simulate._BatteryParticle(
+    particle = sb.simulate._BatteryParticle(
         id=0,
         soc_init=1.0,
         ec_model=ecm_thevenin_zero_order,
@@ -157,7 +157,7 @@ def test_battery_particle_update_state_monotonic_when_negative_current(
 def test_battery_particle_measure_voltage_matches_ecm_when_no_noise(
     ecm_thevenin_zero_order, current, voc
 ):
-    particle = les.simulate._BatteryParticle(
+    particle = sb.simulate._BatteryParticle(
         id=0,
         soc_init=1.0,
         ec_model=ecm_thevenin_zero_order,
@@ -173,13 +173,11 @@ def test_battery_particle_measure_voltage_matches_ecm_when_no_noise(
 @hp.given(n_sim=st.integers(-100, 0))
 def test_simulate_constant_capacity_simple_invalid_n_sim(mock_simulation_config, n_sim):
     with pytest.raises(ValueError):
-        les.simulate_constant_capacity_simple(
-            n_sim=n_sim, config=mock_simulation_config
-        )
+        sb.simulate_constant_capacity_simple(n_sim=n_sim, config=mock_simulation_config)
 
 
 def test_simulate_constant_capacity_simple_output_shape(mock_simulation_config):
-    result = les.simulate_constant_capacity_simple(
+    result = sb.simulate_constant_capacity_simple(
         n_sim=5, config=mock_simulation_config
     )
     assert (
@@ -192,17 +190,17 @@ def test_simulate_constant_capacity_simple_output_shape(mock_simulation_config):
 
 
 def test_simulate_constant_capacity_simple_unit_probability(mock_simulation_config):
-    result = les.simulate_constant_capacity_simple(
+    result = sb.simulate_constant_capacity_simple(
         n_sim=5, config=mock_simulation_config
     )
     assert np.isclose(result.rul_probability.sum(), 1.0)
 
 
 def test_simulate_constant_capacity_simple_soc_zero():
-    config = les.SimulationConfig(
-        current_policy=les.simulate.ConstantCurrentDischarge(current_value=-1.0),
-        voc_model=les.simulate.VOC_Bustos_Baeza(),
-        ec_model=les.simulate.ECMTheveninZeroOrder(R=0.1),
+    config = sb.SimulationConfig(
+        current_policy=sb.simulate.ConstantCurrentDischarge(current_value=-1.0),
+        voc_model=sb.simulate.VOC_Bustos_Baeza(),
+        ec_model=sb.simulate.ECMTheveninZeroOrder(R=0.1),
         process_noise_distribution=lambda: 0.0,
         measurement_noise_distribution=lambda: 0.0,
         dt=100.0,
@@ -211,7 +209,7 @@ def test_simulate_constant_capacity_simple_soc_zero():
         t_0=0.0,
         v_cutoff=2.5,
     )
-    result = les.simulate_constant_capacity_simple(n_sim=5, config=config)
+    result = sb.simulate_constant_capacity_simple(n_sim=5, config=config)
     assert np.all(result.soc_histories == 0.0)
     # even though the particles are dead at t_0, the algorithms assumes they are alive.
     assert len(result) == 2
@@ -221,10 +219,10 @@ def test_simulate_constant_capacity_simple_soc_zero():
     reason="Fails because t_0 is purely a reference since the current is constant in time."
 )
 def test_simulate_constant_capacity_simple_t_zero_gt_eod():
-    config = les.SimulationConfig(
-        current_policy=les.simulate.ConstantCurrentDischarge(current_value=-1.0),
-        voc_model=les.simulate.VOC_Bustos_Baeza(),
-        ec_model=les.simulate.ECMTheveninZeroOrder(R=0.1),
+    config = sb.SimulationConfig(
+        current_policy=sb.simulate.ConstantCurrentDischarge(current_value=-1.0),
+        voc_model=sb.simulate.VOC_Bustos_Baeza(),
+        ec_model=sb.simulate.ECMTheveninZeroOrder(R=0.1),
         process_noise_distribution=lambda: 0.0,
         measurement_noise_distribution=lambda: 0.0,
         dt=100.0,
@@ -233,16 +231,16 @@ def test_simulate_constant_capacity_simple_t_zero_gt_eod():
         t_0=20_000.0,
         v_cutoff=2.5,
     )
-    result = les.simulate_constant_capacity_simple(n_sim=5, config=config)
+    result = sb.simulate_constant_capacity_simple(n_sim=5, config=config)
     assert np.all(result.soc_histories == 0.0)
     assert len(result) == 1
 
 
 def test_simulate_constant_capacity_simple_dt_gt_eod():
-    config = les.SimulationConfig(
-        current_policy=les.simulate.ConstantCurrentDischarge(current_value=-1.0),
-        voc_model=les.simulate.VOC_Bustos_Baeza(),
-        ec_model=les.simulate.ECMTheveninZeroOrder(R=0.1),
+    config = sb.SimulationConfig(
+        current_policy=sb.simulate.ConstantCurrentDischarge(current_value=-1.0),
+        voc_model=sb.simulate.VOC_Bustos_Baeza(),
+        ec_model=sb.simulate.ECMTheveninZeroOrder(R=0.1),
         process_noise_distribution=lambda: 0.0,
         measurement_noise_distribution=lambda: 0.0,
         dt=10_000.0,
@@ -251,12 +249,12 @@ def test_simulate_constant_capacity_simple_dt_gt_eod():
         t_0=0.0,
         v_cutoff=2.5,
     )
-    result = les.simulate_constant_capacity_simple(n_sim=5, config=config)
+    result = sb.simulate_constant_capacity_simple(n_sim=5, config=config)
     assert len(result) == 2
 
 
 def test_simulate_constant_capacity_simple_last_time_eq_t_eod(mock_simulation_config):
-    result = les.simulate_constant_capacity_simple(
+    result = sb.simulate_constant_capacity_simple(
         n_sim=5, config=mock_simulation_config
     )
     assert np.isclose(result.times[-1], result.times_eod.max())

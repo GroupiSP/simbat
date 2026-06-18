@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 from matplotlib import pyplot as plt
 
-import lib_eod_simulation as les
+import simbat as sb
 
 
 def main():
@@ -17,22 +17,22 @@ def main():
         else:
             return -2
 
-    sim_config = les.SimulationConfig(
+    sim_config = sb.SimulationConfig(
         current_policy=discharge_policy,
-        voc_model=les.VOC_Bustos_Baeza(),
-        ec_model=les.ECMTheveninZeroOrder(),
+        voc_model=sb.VOC_Bustos_Baeza(),
+        ec_model=sb.ECMTheveninZeroOrder(),
         process_noise_distribution=lambda: np.random.normal(0, 0.01),
         measurement_noise_distribution=lambda: np.random.normal(0, 0.01),
         dt=100.0,
     )
 
-    sim_results = les.simulate_constant_capacity_simple(n_sim=100, config=sim_config)
+    sim_results = sb.simulate_constant_capacity_simple(n_sim=100, config=sim_config)
 
     _, axs = plt.subplots(1, 3, figsize=(10, 6))
 
-    les.plot_soc_results(axs[0], [sim_results])
-    les.plot_voltage_results(axs[1], [sim_results])
-    les.plot_rul_bars(axs[2], [sim_results])
+    sb.plot_soc_results(axs[0], [sim_results])
+    sb.plot_voltage_results(axs[1], [sim_results])
+    sb.plot_rul_bars(axs[2], [sim_results])
 
     plt.show()
 
