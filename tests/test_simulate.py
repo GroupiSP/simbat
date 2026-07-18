@@ -46,7 +46,8 @@ def mock_simulation_results() -> sb.SimulationResult:
 @pytest.fixture(scope="session")
 def mock_simulation_config() -> sb.SimulationConfig:
     return sb.SimulationConfig(
-        current_policy=sb.simulate.ConstantCurrentDischarge(current_value=-1.0),
+        current_policies=[sb.simulate.ConstantCurrentDischarge(current_value=-1.0)],
+        policy_choice_distribution=lambda: 0,
         voc_model=sb.simulate.VOC_Bustos_Baeza(),
         ec_model=sb.simulate.ECMTheveninZeroOrder(R=0.1),
         process_noise_distribution=lambda: np.random.normal(0, 0.0005),
@@ -198,7 +199,8 @@ def test_simulate_constant_capacity_simple_unit_probability(mock_simulation_conf
 
 def test_simulate_constant_capacity_simple_soc_zero():
     config = sb.SimulationConfig(
-        current_policy=sb.simulate.ConstantCurrentDischarge(current_value=-1.0),
+        current_policies=[sb.simulate.ConstantCurrentDischarge(current_value=-1.0)],
+        policy_choice_distribution=lambda: 0,
         voc_model=sb.simulate.VOC_Bustos_Baeza(),
         ec_model=sb.simulate.ECMTheveninZeroOrder(R=0.1),
         process_noise_distribution=lambda: 0.0,
@@ -220,7 +222,8 @@ def test_simulate_constant_capacity_simple_soc_zero():
 )
 def test_simulate_constant_capacity_simple_t_zero_gt_eod():
     config = sb.SimulationConfig(
-        current_policy=sb.simulate.ConstantCurrentDischarge(current_value=-1.0),
+        current_policies=[sb.simulate.ConstantCurrentDischarge(current_value=-1.0)],
+        policy_choice_distribution=lambda: 0,
         voc_model=sb.simulate.VOC_Bustos_Baeza(),
         ec_model=sb.simulate.ECMTheveninZeroOrder(R=0.1),
         process_noise_distribution=lambda: 0.0,
@@ -238,7 +241,8 @@ def test_simulate_constant_capacity_simple_t_zero_gt_eod():
 
 def test_simulate_constant_capacity_simple_dt_gt_eod():
     config = sb.SimulationConfig(
-        current_policy=sb.simulate.ConstantCurrentDischarge(current_value=-1.0),
+        current_policies=[sb.simulate.ConstantCurrentDischarge(current_value=-1.0)],
+        policy_choice_distribution=lambda: 0,
         voc_model=sb.simulate.VOC_Bustos_Baeza(),
         ec_model=sb.simulate.ECMTheveninZeroOrder(R=0.1),
         process_noise_distribution=lambda: 0.0,

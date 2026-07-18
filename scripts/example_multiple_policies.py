@@ -9,22 +9,25 @@ import simbat as sb
 
 
 def main():
-    """Shows a simple simulation with a single discharge policy."""
+    """Shows a simulation with two possible discharge policies, picked with a choice distribution."""
 
     rng = np.random.default_rng(0)
 
-    def discharge_policy(soc: Any, t: float) -> float:
+    def discharge_policy_0(soc: Any, t: float) -> float:
+        return -2
+
+    def discharge_policy_1(soc: Any, t: float) -> float:
         if t < 4000:
             return -1
         else:
             return -2
 
     sim_config = sb.SimulationConfig(
-        current_policies=[discharge_policy],
-        policy_choice_distribution=lambda: rng.choice([0], p=[1.0]),
+        current_policies=[discharge_policy_0, discharge_policy_1],
+        policy_choice_distribution=lambda: rng.choice([0, 1], p=[0.3, 0.7]),
         voc_model=sb.VOC_Bustos_Baeza(),
         ec_model=sb.ECMTheveninZeroOrder(),
-        process_noise_distribution=lambda: rng.normal(0, 0.01),
+        process_noise_distribution=lambda: rng.normal(0, 0.001),
         measurement_noise_distribution=lambda: rng.normal(0, 0.01),
         dt=100.0,
     )

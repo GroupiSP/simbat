@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
 import numpy as np
@@ -77,22 +77,45 @@ class ECMTheveninZeroOrder:
 # SIMULATOR
 # =====================================================================
 
-type Distribution = Callable[[], float]
-
 
 @dataclass(frozen=True)
 class SimulationConfig:
     # TODO: add data validation (Pydantic?)
-    current_policy: DischargePolicyTemplate = ConstantCurrentDischarge(-2.8 * 0.75)
+    """Configuration for a battery simulation.
+
+    Attributes:
+        current_policies: Possible loads that the battery particle can follow. Defaults to a single policy of
+            constant current discharge of 75% of the nominal capacity.
+        policy_choice_distribution: Distribution function for choosing the policy
+            for the particle at the beginning of the simulation. Default picks the first policy with probability 1.0.
+        voc_model: Open-circuit voltage model.
+        ec_model: Equivalent circuit model used to compute terminal voltage.
+        process_noise_distribution: Callable returning process noise samples.
+        measurement_noise_distribution: Callable returning voltage noise samples.
+        dt: Simulation time step, in seconds.
+        nominal_capacity: Nominal battery capacity, in coulombs.
+        soc_0: Initial state of charge.
+        t_0: Initial simulation time.
+        v_cutoff: Terminal voltage threshold for end-of-discharge.
+    """
+
+    current_policies: list[DischargePolicyTemplate] = field(
+        default_factory=lambda: [ConstantCurrentDischarge(-2.8 * 0.75)]
+    )
+    policy_choice_distribution: Callable[[], int] = lambda: np.random.choice(
+        [0], p=[1.0]
+    )
     voc_model: VOCModelTemplate = VOC_Bustos_Baeza()
     ec_model: EquivalentCircuitModelTemplate = ECMTheveninZeroOrder()
-    process_noise_distribution: Distribution = lambda: np.random.normal(0, 1e-3)
-    measurement_noise_distribution: Distribution = lambda: np.random.normal(0, 1e-2)
+    process_noise_distribution: Callable[[], float] = lambda: np.random.normal(0, 1e-3)
+    measurement_noise_distribution: Callable[[], float] = lambda: np.random.normal(
+        0, 1e-2
+    )
     dt: float = 1.0
-    nominal_capacity: float = 10080.0  # in Coulombs, i.e., 2.8Ah at 1.2V
+    nominal_capacity: float = 10080.0
     soc_0: float = 1.0
     t_0: float = 0.0
-    v_cutoff: float = 2.5  # in Volts
+    v_cutoff: float = 2.5
 
 
 @dataclass
@@ -102,6 +125,15 @@ class SimulationResult:
     voltage_histories: np.ndarray
     rul_probability: np.ndarray
     times_eod: np.ndarray
+    """Simulation result of a battery Monte Carlo simulation.
+    
+    Attributes:
+        times: Array of time steps.
+        soc_histories: Array of shape (n_time_steps, n_sim) containing the SoC histories of each particle.
+        voltage_histories: Array of shape (n_time_steps, n_sim) containing the voltage histories of each particle.
+        rul_probability: Array of shape (n_time_steps,) containing the probability of reaching end-of-discharge at each time step.
+        times_eod: Array of shape (n_sim,) containing the time of end-of-discharge for each particle.
+    """
 
     def __len__(self) -> int:
         return len(self.times)
@@ -131,8 +163,8 @@ class _BatteryParticle:
     soc: float
     alive: bool
 
-    process_noise_model: Distribution
-    measurement_noise_model: Distribution
+    process_noise_model: Callable[[], float]
+    measurement_noise_model: Callable[[], float]
     ec_model: EquivalentCircuitModelTemplate
 
     def __init__(
@@ -179,7 +211,7 @@ def simulate_constant_capacity_simple(
     if n_sim <= 0:
         raise ValueError("n_sim must be greater than 0.")
 
-    # Initialization
+    # Initialize the particles
     particles = [
         _BatteryParticle(
             id=i,
@@ -189,6 +221,12 @@ def simulate_constant_capacity_simple(
         for i in range(n_sim)
     ]
 
+    # Associate a current policy to each particle
+    current_policies = [
+        config.current_policies[config.policy_choice_distribution()]
+        for _ in range(n_sim)
+    ]
+
     times_eod = np.empty(shape=(n_sim,))
     times = []  # Final shape: (n_time_steps,)
     soc_histories = []  # Final shape: (n_time_steps, n_sim)
@@ -196,7 +234,10 @@ def simulate_constant_capacity_simple(
     rul_probability = []  # Final shape: (n_time_steps,)
 
     def append_to_histories(
-        t: float, particles: list[_BatteryParticle], new_deaths: int
+        t: float,
+        particles: list[_BatteryParticle],
+        current_policies: list[DischargePolicyTemplate],
+        new_deaths: int,
     ) -> None:
         """Update the histories at time t, based on the particles SoC and alive status."""
         times.append(t)
@@ -206,9 +247,9 @@ def simulate_constant_capacity_simple(
                 [
                     p.measure_voltage(
                         voc_t=config.voc_model(p.soc),
-                        I_t=config.current_policy(p.soc, t),
+                        I_t=current_policy(p.soc, t),
                     )
-                    for p in particles
+                    for p, current_policy in zip(particles, current_policies)
                 ]
             )
         )
@@ -216,7 +257,7 @@ def simulate_constant_capacity_simple(
 
     t = config.t_0
     append_to_histories(
-        t, particles, new_deaths=0
+        t, particles, current_policies=current_policies, new_deaths=0
     )  # assumes all particles alive at t_0
 
     keep = True
@@ -225,10 +266,10 @@ def simulate_constant_capacity_simple(
     while keep:
         t += config.dt
         new_deaths = 0
-        for p in particles:
+        for p, current_policy in zip(particles, current_policies):
             if p.alive:
                 # update states
-                I_t = config.current_policy(p.soc, t)
+                I_t = current_policy(p.soc, t)
                 state_perturbation = config.process_noise_distribution()
                 p.update_state(
                     I_t,
@@ -249,7 +290,9 @@ def simulate_constant_capacity_simple(
                     times_eod[p.id] = t
                     new_deaths += 1
 
-        append_to_histories(t, particles, new_deaths=new_deaths)
+        append_to_histories(
+            t, particles, current_policies=current_policies, new_deaths=new_deaths
+        )
 
         keep = any(p.alive for p in particles)
 
@@ -276,7 +319,6 @@ def join_simulation_results(results: list[SimulationResult]) -> SimulationResult
         np.pad(r.rul_probability, (0, max_time_sequence_length - len(r)), "constant")
         for r in results
     ]
-
     # Compute mean probablity RUL distribution across simulations.
     joined_probabilities = np.sum(padded_p, 0) / len(results)
 
