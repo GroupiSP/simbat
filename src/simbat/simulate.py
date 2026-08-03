@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Protocol
+from typing import Protocol
 
 import numpy as np
 import pandas as pd
@@ -122,6 +123,7 @@ class SimulationConfig:
 class SimulationResult:
     times: np.ndarray
     soc_histories: np.ndarray
+    load_histories: np.ndarray
     voltage_histories: np.ndarray
     rul_probability: np.ndarray
     times_eod: np.ndarray
@@ -130,6 +132,7 @@ class SimulationResult:
     Attributes:
         times: Array of time steps.
         soc_histories: Array of shape (n_time_steps, n_sim) containing the SoC histories of each particle.
+        load_histories: Array of shape (n_time_steps, n_sim) containing the values in time at which each particle is subjected to.
         voltage_histories: Array of shape (n_time_steps, n_sim) containing the voltage histories of each particle.
         rul_probability: Array of shape (n_time_steps,) containing the probability of reaching end-of-discharge at each time step.
         times_eod: Array of shape (n_sim,) containing the time of end-of-discharge for each particle.
@@ -148,6 +151,7 @@ class SimulationResult:
             "rul_probability": self.rul_probability,
         }
         for i in range(self.n_sim):
+            to_df[f"load_sim_{i}"] = self.load_histories[:, i]
             to_df[f"soc_sim_{i}"] = self.soc_histories[:, i]
             to_df[f"voltage_sim_{i}"] = self.voltage_histories[:, i]
             to_df[f"eod_reached_sim_{i}"] = self.times_eod[i] <= self.times
@@ -229,6 +233,7 @@ def simulate_constant_capacity_simple(
 
     times_eod = np.empty(shape=(n_sim,))
     times = []  # Final shape: (n_time_steps,)
+    load_histories = []  # Final shape: (n_time_steps, n_sim)
     soc_histories = []  # Final shape: (n_time_steps, n_sim)
     voltage_histories = []  # Final shape: (n_time_steps, n_sim)
     rul_probability = []  # Final shape: (n_time_steps,)
@@ -241,6 +246,14 @@ def simulate_constant_capacity_simple(
     ) -> None:
         """Update the histories at time t, based on the particles SoC and alive status."""
         times.append(t)
+        load_histories.append(
+            np.array(
+                [
+                    current_policy(p.soc, t)
+                    for p, current_policy in zip(particles, current_policies)
+                ]
+            )
+        )
         soc_histories.append(np.array([p.soc for p in particles]))
         voltage_histories.append(
             np.array(
@@ -299,6 +312,7 @@ def simulate_constant_capacity_simple(
     # Compose the result and return it
     return SimulationResult(
         times=np.array(times),
+        load_histories=np.stack(load_histories),
         soc_histories=np.stack(soc_histories),
         voltage_histories=np.stack(voltage_histories),
         rul_probability=np.array(rul_probability),
@@ -323,6 +337,16 @@ def join_simulation_results(results: list[SimulationResult]) -> SimulationResult
     joined_probabilities = np.sum(padded_p, 0) / len(results)
 
     # Extend the SoC histories with the last value
+    padded_loads = [
+        np.pad(
+            r.load_histories, ((0, max_time_sequence_length - len(r)), (0, 0)), "edge"
+        )
+        for r in results
+    ]
+    # Concatenate the SoC histories across simulations, resulting in a shape of (max(n_time_steps), n_simulations * n_simulators).
+    joined_load_histories = np.concatenate(padded_loads, 1)
+
+    # Extend the SoC histories with the last value
     padded_soc = [
         np.pad(
             r.soc_histories, ((0, max_time_sequence_length - len(r)), (0, 0)), "edge"
@@ -345,6 +369,7 @@ def join_simulation_results(results: list[SimulationResult]) -> SimulationResult
 
     return SimulationResult(
         times=results[longest_time_sequence].times,
+        load_histories=joined_load_histories,
         soc_histories=joined_soc_histories,
         voltage_histories=joined_voltage_histories,
         rul_probability=joined_probabilities,
