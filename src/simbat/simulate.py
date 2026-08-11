@@ -122,6 +122,7 @@ class SimulationConfig:
 @dataclass
 class SimulationResult:
     times: np.ndarray
+    policy_ids: np.ndarray
     soc_histories: np.ndarray
     load_histories: np.ndarray
     voltage_histories: np.ndarray
@@ -131,6 +132,7 @@ class SimulationResult:
     
     Attributes:
         times: Array of time steps.
+        policy_ids: Integer array of shape (n_sim,) containing the policy id for each particle.
         soc_histories: Array of shape (n_time_steps, n_sim) containing the SoC histories of each particle.
         load_histories: Array of shape (n_time_steps, n_sim) containing the values in time at which each particle is subjected to.
         voltage_histories: Array of shape (n_time_steps, n_sim) containing the voltage histories of each particle.
@@ -151,6 +153,9 @@ class SimulationResult:
             "rul_probability": self.rul_probability,
         }
         for i in range(self.n_sim):
+            to_df[f"policy_id_{i}"] = self.policy_ids[i] * np.ones_like(
+                self.times, dtype=int
+            )
             to_df[f"load_sim_{i}"] = self.load_histories[:, i]
             to_df[f"soc_sim_{i}"] = self.soc_histories[:, i]
             to_df[f"voltage_sim_{i}"] = self.voltage_histories[:, i]
@@ -226,9 +231,9 @@ def simulate_constant_capacity_simple(
     ]
 
     # Associate a current policy to each particle
+    current_policy_ids = [config.policy_choice_distribution() for _ in range(n_sim)]
     current_policies = [
-        config.current_policies[config.policy_choice_distribution()]
-        for _ in range(n_sim)
+        config.current_policies[current_policy_ids[i]] for i in range(n_sim)
     ]
 
     times_eod = np.empty(shape=(n_sim,))
@@ -312,6 +317,7 @@ def simulate_constant_capacity_simple(
     # Compose the result and return it
     return SimulationResult(
         times=np.array(times),
+        policy_ids=np.array(current_policy_ids, dtype=int),
         load_histories=np.stack(load_histories),
         soc_histories=np.stack(soc_histories),
         voltage_histories=np.stack(voltage_histories),
@@ -369,6 +375,7 @@ def join_simulation_results(results: list[SimulationResult]) -> SimulationResult
 
     return SimulationResult(
         times=results[longest_time_sequence].times,
+        policy_ids=np.concatenate([r.policy_ids for r in results]),
         load_histories=joined_load_histories,
         soc_histories=joined_soc_histories,
         voltage_histories=joined_voltage_histories,
