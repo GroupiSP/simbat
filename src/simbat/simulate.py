@@ -108,7 +108,7 @@ class SimulationConfig:
     current_policies: list[DischargePolicyTemplate] = field(
         default_factory=lambda: [ConstantCurrentDischarge(-2.8 * 0.75)]
     )
-    policy_choice_distribution: Callable[[float], int] = lambda t_0: np.random.choice(
+    policy_choice_distribution: Callable[[], int] = lambda: np.random.choice(
         [0], p=[1.0]
     )
     voc_model: VOCModelTemplate = VOC_Bustos_Baeza()
@@ -134,7 +134,7 @@ class SimulationResult:
     rul_probability: np.ndarray
     times_eod: np.ndarray
     """Simulation result of a battery Monte Carlo simulation.
-    
+
     Attributes:
         times: Array of time steps.
         policy_ids: Integer array of shape (n_sim,) containing the policy id for each particle.
@@ -236,9 +236,7 @@ def simulate_constant_capacity_simple(
     ]
 
     # Associate a current policy to each particle
-    current_policy_ids = [
-        config.policy_choice_distribution(config.t_0) for _ in range(n_sim)
-    ]
+    current_policy_ids = [config.policy_choice_distribution() for _ in range(n_sim)]
     current_policies = [
         config.current_policies[current_policy_ids[i]] for i in range(n_sim)
     ]
